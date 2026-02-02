@@ -8,7 +8,7 @@ App para llevar el control de gastos y entregas durante la construcción de una 
 - 💵 Dolarización automática (convierte ARS a USD)
 - 📥 Exportación a Excel
 - 💾 Guardado automático en el navegador
-- 📱 Responsive (funciona en celular y desktop) 
+- 📱 Responsive (funciona en celular y desktop)
 
 ## Uso
 
