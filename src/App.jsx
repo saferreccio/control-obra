@@ -93,29 +93,34 @@ export default function ConstruccionTracker() {
       
       if (data.values && data.values.length > 0) {
         const movimientosCargados = data.values
-          .filter(row => row[0])
+          .filter(row => row[0] && row[4]) // Filtrar filas sin ID o sin monto USD
           .map(row => {
-            const montoPesos = row[5] ? parseFloat(row[5]) : 0;
-            const montoUSD = row[4] ? parseFloat(row[4]) : 0;
-            const tipoCambio = row[6] ? parseFloat(row[6]) : null;
+            const montoPesos = row[5] ? parseFloat(row[5].toString().replace(/,/g, '')) : 0;
+            const montoUSD = row[4] ? parseFloat(row[4].toString().replace(/,/g, '')) : 0;
+            const tipoCambio = row[6] ? parseFloat(row[6].toString().replace(/,/g, '')) : null;
             
-            // Parsear fecha - puede venir en varios formatos
+            // Parsear fecha - formato "2025-07-17 0:00:00"
             let fecha = '';
             if (row[1]) {
+              const fechaStr = row[1].toString();
+              // Si tiene formato "YYYY-MM-DD HH:MM:SS" o "YYYY-MM-DD"
+              if (fechaStr.includes('-')) {
+                fecha = fechaStr.split(' ')[0]; // Tomar solo la parte de la fecha
+              }
               // Si es formato DD/MM/YYYY
-              if (typeof row[1] === 'string' && row[1].includes('/')) {
-                const [day, month, year] = row[1].split('/');
+              else if (fechaStr.includes('/')) {
+                const [day, month, year] = fechaStr.split('/');
                 fecha = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
-              } 
-              // Si es formato ISO o Date object
+              }
+              // Último intento con Date
               else {
                 try {
-                  const d = new Date(row[1]);
+                  const d = new Date(fechaStr);
                   if (!isNaN(d.getTime())) {
                     fecha = d.toISOString().split('T')[0];
                   }
                 } catch (e) {
-                  fecha = new Date().toISOString().split('T')[0];
+                  console.error('Error parseando fecha:', fechaStr);
                 }
               }
             }
@@ -123,7 +128,7 @@ export default function ConstruccionTracker() {
             return {
               id: parseInt(row[0]) || Date.now(),
               fecha: fecha,
-              concepto: row[2] || '',
+              concepto: row[2] || 'Sin concepto',
               categoria: row[3] || 'Otros',
               montoUSD: montoUSD,
               montoPesos: montoPesos,
@@ -131,7 +136,7 @@ export default function ConstruccionTracker() {
               moneda: montoPesos > 0 ? 'ARS' : 'USD'
             };
           })
-          .filter(mov => mov.fecha) // Filtrar movimientos sin fecha válida
+          .filter(mov => mov.fecha && mov.montoUSD > 0) // Filtrar movimientos sin fecha válida o sin monto
           .sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
         
         setMovimientos(movimientosCargados);
