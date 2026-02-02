@@ -1,15 +1,33 @@
 import React, { useState, useEffect } from 'react';
-import { Download, Plus, DollarSign, TrendingUp, Calendar } from 'lucide-react';
+import { Download, Plus, DollarSign, TrendingUp, Calendar, RefreshCw, Cloud, AlertCircle } from 'lucide-react';
 import * as XLSX from 'xlsx';
+
+// Configuración de Google Sheets
+const GOOGLE_SHEETS_CONFIG = {
+  apiKey: '', // El usuario deberá configurar esto
+  spreadsheetId: '', // El usuario deberá configurar esto
+  range: 'Libro Diario!A5:G', // Rango para leer/escribir datos
+};
 
 export default function ConstruccionTracker() {
   const [movimientos, setMovimientos] = useState([]);
   const [mostrarForm, setMostrarForm] = useState(false);
   const [tipoMovimiento, setTipoMovimiento] = useState('gasto');
+  const [configurado, setConfigurado] = useState(false);
+  const [mostrarConfig, setMostrarConfig] = useState(false);
+  const [sincronizando, setSincronizando] = useState(false);
+  const [ultimaSync, setUltimaSync] = useState(null);
+  const [error, setError] = useState(null);
+  
+  const [config, setConfig] = useState({
+    apiKey: localStorage.getItem('sheets-api-key') || '',
+    spreadsheetId: localStorage.getItem('sheets-spreadsheet-id') || ''
+  });
+
   const [formData, setFormData] = useState({
     fecha: new Date().toISOString().split('T')[0],
     concepto: '',
-    categoria: 'materiales',
+    categoria: 'Materiales',
     montoPesos: '',
     montoUSD: '',
     tipoCambio: '',
@@ -17,31 +35,146 @@ export default function ConstruccionTracker() {
     notas: ''
   });
 
-  // Cargar datos del localStorage al iniciar
+  const categorias = {
+    gasto: ['Materiales', 'Mano de obra', 'Arquitectos', 'Tramite Municipalidad', 'Trabajos Preliminares', 'Honorarios', 'Permisos', 'Servicios', 'Otros'],
+    entrega: ['Entrega arquitecto', 'Anticipo', 'Pago parcial', 'Fondos propios']
+  };
+
+  // Verificar si está configurado
   useEffect(() => {
-    const datosGuardados = localStorage.getItem('construccion-movimientos');
-    if (datosGuardados) {
-      setMovimientos(JSON.parse(datosGuardados));
+    const apiKey = localStorage.getItem('sheets-api-key');
+    const spreadsheetId = localStorage.getItem('sheets-spreadsheet-id');
+    
+    if (apiKey && spreadsheetId) {
+      setConfigurado(true);
+      GOOGLE_SHEETS_CONFIG.apiKey = apiKey;
+      GOOGLE_SHEETS_CONFIG.spreadsheetId = spreadsheetId;
+      cargarDesdeGoogleSheets();
     }
   }, []);
 
-  // Guardar en localStorage cada vez que cambian los movimientos
-  useEffect(() => {
-    if (movimientos.length > 0) {
-      localStorage.setItem('construccion-movimientos', JSON.stringify(movimientos));
+  // Guardar configuración
+  const guardarConfiguracion = () => {
+    if (!config.apiKey || !config.spreadsheetId) {
+      alert('Por favor completá ambos campos');
+      return;
     }
-  }, [movimientos]);
+    
+    localStorage.setItem('sheets-api-key', config.apiKey);
+    localStorage.setItem('sheets-spreadsheet-id', config.spreadsheetId);
+    GOOGLE_SHEETS_CONFIG.apiKey = config.apiKey;
+    GOOGLE_SHEETS_CONFIG.spreadsheetId = config.spreadsheetId;
+    
+    setConfigurado(true);
+    setMostrarConfig(false);
+    cargarDesdeGoogleSheets();
+  };
 
-  const categorias = {
-    gasto: ['Materiales', 'Mano de obra', 'Honorarios', 'Permisos', 'Servicios', 'Otros'],
-    entrega: ['Entrega arquitecto', 'Anticipo', 'Pago parcial']
+  // Cargar datos desde Google Sheets
+  const cargarDesdeGoogleSheets = async () => {
+    setSincronizando(true);
+    setError(null);
+    
+    try {
+      const url = `https://sheets.googleapis.com/v4/spreadsheets/${GOOGLE_SHEETS_CONFIG.spreadsheetId}/values/${GOOGLE_SHEETS_CONFIG.range}?key=${GOOGLE_SHEETS_CONFIG.apiKey}`;
+      
+      const response = await fetch(url);
+      
+      if (!response.ok) {
+        throw new Error('Error al cargar datos. Verificá tu API Key y Spreadsheet ID.');
+      }
+      
+      const data = await response.json();
+      
+      if (data.values && data.values.length > 0) {
+        const movimientosCargados = data.values
+          .filter(row => row[0]) // Filtrar filas vacías
+          .map(row => {
+            const montoPesos = row[5] ? parseFloat(row[5]) : 0;
+            const montoUSD = row[4] ? parseFloat(row[4]) : 0;
+            const tipoCambio = row[6] ? parseFloat(row[6]) : null;
+            
+            return {
+              id: parseInt(row[0]) || Date.now(),
+              fecha: row[1] ? new Date(row[1]).toISOString().split('T')[0] : '',
+              concepto: row[2] || '',
+              categoria: row[3] || 'Otros',
+              montoUSD: montoUSD,
+              montoPesos: montoPesos,
+              tipoCambio: tipoCambio,
+              moneda: montoPesos > 0 ? 'ARS' : 'USD',
+              tipo: categorias.gasto.includes(row[3]) ? 'gasto' : 'entrega',
+              notas: ''
+            };
+          })
+          .sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
+        
+        setMovimientos(movimientosCargados);
+        setUltimaSync(new Date());
+      }
+      
+    } catch (err) {
+      console.error('Error:', err);
+      setError(err.message);
+    } finally {
+      setSincronizando(false);
+    }
+  };
+
+  // Guardar movimiento en Google Sheets
+  const guardarEnGoogleSheets = async (nuevoMovimiento) => {
+    try {
+      // Obtener el último ID
+      const ultimoId = movimientos.length > 0 
+        ? Math.max(...movimientos.map(m => m.id)) 
+        : 0;
+      
+      const proximoId = ultimoId + 1;
+      
+      // Formatear fecha para Google Sheets (DD/MM/YYYY)
+      const [year, month, day] = nuevoMovimiento.fecha.split('-');
+      const fechaFormateada = `${day}/${month}/${year}`;
+      
+      // Preparar la fila según el formato del Excel
+      const nuevaFila = [
+        proximoId,
+        fechaFormateada,
+        nuevoMovimiento.concepto,
+        nuevoMovimiento.categoria,
+        nuevoMovimiento.moneda === 'USD' ? nuevoMovimiento.montoUSD : `=F${proximoId + 4}/G${proximoId + 4}`,
+        nuevoMovimiento.moneda === 'ARS' ? nuevoMovimiento.montoPesos : `=E${proximoId + 4}*G${proximoId + 4}`,
+        nuevoMovimiento.tipoCambio || ''
+      ];
+      
+      const url = `https://sheets.googleapis.com/v4/spreadsheets/${GOOGLE_SHEETS_CONFIG.spreadsheetId}/values/Libro Diario!A${proximoId + 4}:append?valueInputOption=USER_ENTERED&key=${GOOGLE_SHEETS_CONFIG.apiKey}`;
+      
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          values: [nuevaFila]
+        })
+      });
+      
+      if (!response.ok) {
+        throw new Error('Error al guardar en Google Sheets');
+      }
+      
+      // Recargar datos
+      await cargarDesdeGoogleSheets();
+      
+    } catch (err) {
+      console.error('Error al guardar:', err);
+      alert('Error al guardar en Google Sheets. Verificá tu configuración.');
+    }
   };
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
     let newFormData = { ...formData, [name]: value };
 
-    // Si cambia el monto en pesos o el tipo de cambio, calcular USD automáticamente
     if (name === 'montoPesos' || name === 'tipoCambio') {
       const pesos = parseFloat(name === 'montoPesos' ? value : formData.montoPesos) || 0;
       const tc = parseFloat(name === 'tipoCambio' ? value : formData.tipoCambio) || 0;
@@ -53,7 +186,7 @@ export default function ConstruccionTracker() {
     setFormData(newFormData);
   };
 
-  const agregarMovimiento = () => {
+  const agregarMovimiento = async () => {
     if (!formData.concepto || (!formData.montoUSD && !formData.montoPesos)) {
       alert('Por favor completá el concepto y el monto');
       return;
@@ -72,13 +205,16 @@ export default function ConstruccionTracker() {
       notas: formData.notas
     };
 
-    setMovimientos([...movimientos, nuevoMovimiento].sort((a, b) => new Date(b.fecha) - new Date(a.fecha)));
+    if (configurado) {
+      await guardarEnGoogleSheets(nuevoMovimiento);
+    } else {
+      setMovimientos([...movimientos, nuevoMovimiento].sort((a, b) => new Date(b.fecha) - new Date(a.fecha)));
+    }
     
-    // Resetear form
     setFormData({
       fecha: new Date().toISOString().split('T')[0],
       concepto: '',
-      categoria: 'materiales',
+      categoria: 'Materiales',
       montoPesos: '',
       montoUSD: '',
       tipoCambio: '',
@@ -88,27 +224,20 @@ export default function ConstruccionTracker() {
     setMostrarForm(false);
   };
 
-  const eliminarMovimiento = (id) => {
-    if (confirm('¿Seguro que querés eliminar este movimiento?')) {
-      setMovimientos(movimientos.filter(m => m.id !== id));
-    }
-  };
-
   const descargarExcel = () => {
     const datosExcel = movimientos.map(m => ({
+      ID: movimientos.indexOf(m) + 1,
       Fecha: m.fecha,
-      Tipo: m.tipo === 'gasto' ? 'Gasto' : 'Entrega',
       Concepto: m.concepto,
       Categoría: m.categoria,
-      'Monto ARS': m.montoPesos || '-',
-      'Tipo Cambio': m.tipoCambio || '-',
       'Monto USD': m.montoUSD,
-      Notas: m.notas || '-'
+      'Monto ARS': m.montoPesos || '-',
+      'Tipo Cambio': m.tipoCambio || '-'
     }));
 
     const ws = XLSX.utils.json_to_sheet(datosExcel);
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Movimientos');
+    XLSX.utils.book_append_sheet(wb, ws, 'Libro Diario');
     
     const fechaHoy = new Date().toISOString().split('T')[0];
     XLSX.writeFile(wb, `construccion-${fechaHoy}.xlsx`);
@@ -121,6 +250,79 @@ export default function ConstruccionTracker() {
 
   const saldoUSD = totales.entregasUSD - totales.gastosUSD;
 
+  // Panel de configuración
+  if (mostrarConfig || !configurado) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-4 flex items-center justify-center">
+        <div className="max-w-2xl w-full bg-white rounded-xl shadow-lg p-8">
+          <h1 className="text-3xl font-bold text-slate-800 mb-2">Configuración de Google Sheets</h1>
+          <p className="text-slate-600 mb-6">Conectá tu Google Sheet para sincronizar automáticamente</p>
+          
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-2">
+                Google Sheets API Key
+              </label>
+              <input
+                type="text"
+                value={config.apiKey}
+                onChange={(e) => setConfig({ ...config, apiKey: e.target.value })}
+                placeholder="AIzaSy..."
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-2">
+                Spreadsheet ID
+              </label>
+              <input
+                type="text"
+                value={config.spreadsheetId}
+                onChange={(e) => setConfig({ ...config, spreadsheetId: e.target.value })}
+                placeholder="1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms"
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                Lo encontrás en la URL: docs.google.com/spreadsheets/d/<strong>ESTE-ES-EL-ID</strong>/edit
+              </p>
+            </div>
+            
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mt-6">
+              <h3 className="font-semibold text-blue-900 mb-2">📋 Instrucciones rápidas:</h3>
+              <ol className="text-sm text-blue-800 space-y-1 list-decimal list-inside">
+                <li>Creá una copia del template de Google Sheet que te voy a dar</li>
+                <li>Conseguí tu API Key desde Google Cloud Console</li>
+                <li>Copiá el ID de tu spreadsheet desde la URL</li>
+                <li>Pegá ambos valores acá arriba</li>
+              </ol>
+              <p className="text-xs text-blue-700 mt-3">
+                💡 Vas a recibir instrucciones detalladas en un archivo aparte
+              </p>
+            </div>
+          </div>
+          
+          <div className="flex gap-3 mt-8">
+            <button
+              onClick={guardarConfiguracion}
+              className="flex-1 bg-blue-600 text-white rounded-lg py-3 font-semibold hover:bg-blue-700 transition-colors"
+            >
+              Guardar y Conectar
+            </button>
+            {configurado && (
+              <button
+                onClick={() => setMostrarConfig(false)}
+                className="flex-1 bg-gray-200 text-gray-700 rounded-lg py-3 font-semibold hover:bg-gray-300 transition-colors"
+              >
+                Cancelar
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-4">
       <div className="max-w-4xl mx-auto">
@@ -129,17 +331,61 @@ export default function ConstruccionTracker() {
           <div className="flex items-center justify-between mb-6">
             <div>
               <h1 className="text-3xl font-bold text-slate-800">Control de Obra</h1>
-              <p className="text-slate-600 mt-1">Registro de gastos y entregas</p>
+              <div className="flex items-center gap-2 mt-1">
+                <p className="text-slate-600">Construcción Alcanfores</p>
+                {configurado && (
+                  <span className="flex items-center gap-1 text-xs bg-green-100 text-green-700 px-2 py-1 rounded-full">
+                    <Cloud size={12} />
+                    Sincronizado
+                  </span>
+                )}
+              </div>
             </div>
-            <button
-              onClick={descargarExcel}
-              disabled={movimientos.length === 0}
-              className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
-            >
-              <Download size={20} />
-              Descargar Excel
-            </button>
+            <div className="flex gap-2">
+              {configurado && (
+                <button
+                  onClick={cargarDesdeGoogleSheets}
+                  disabled={sincronizando}
+                  className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300 transition-colors"
+                >
+                  <RefreshCw size={20} className={sincronizando ? 'animate-spin' : ''} />
+                  {sincronizando ? 'Sincronizando...' : 'Actualizar'}
+                </button>
+              )}
+              <button
+                onClick={descargarExcel}
+                disabled={movimientos.length === 0}
+                className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+              >
+                <Download size={20} />
+                Excel
+              </button>
+            </div>
           </div>
+
+          {/* Mensaje de error */}
+          {error && (
+            <div className="mb-4 bg-red-50 border border-red-200 rounded-lg p-3 flex items-start gap-2">
+              <AlertCircle size={20} className="text-red-600 flex-shrink-0 mt-0.5" />
+              <div>
+                <p className="text-sm text-red-800 font-medium">Error de sincronización</p>
+                <p className="text-xs text-red-600 mt-1">{error}</p>
+                <button
+                  onClick={() => setMostrarConfig(true)}
+                  className="text-xs text-red-700 underline mt-2"
+                >
+                  Revisar configuración
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Última sincronización */}
+          {ultimaSync && (
+            <p className="text-xs text-gray-500 mb-4">
+              Última actualización: {ultimaSync.toLocaleTimeString('es-AR')}
+            </p>
+          )}
 
           {/* Totales */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -191,7 +437,6 @@ export default function ConstruccionTracker() {
           <div className="bg-white rounded-xl shadow-sm p-6 mb-6">
             <h2 className="text-xl font-bold text-slate-800 mb-4">Nuevo Movimiento</h2>
             
-            {/* Tipo de movimiento */}
             <div className="flex gap-2 mb-4">
               <button
                 onClick={() => setTipoMovimiento('gasto')}
@@ -237,7 +482,7 @@ export default function ConstruccionTracker() {
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   >
                     {categorias[tipoMovimiento].map(cat => (
-                      <option key={cat} value={cat.toLowerCase()}>{cat}</option>
+                      <option key={cat} value={cat}>{cat}</option>
                     ))}
                   </select>
                 </div>
@@ -330,18 +575,6 @@ export default function ConstruccionTracker() {
                 </div>
               )}
 
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Notas (opcional)</label>
-                <textarea
-                  name="notas"
-                  value={formData.notas}
-                  onChange={handleInputChange}
-                  placeholder="Detalles adicionales..."
-                  rows="2"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                />
-              </div>
-
               <div className="flex gap-2 pt-2">
                 <button
                   onClick={agregarMovimiento}
@@ -365,7 +598,9 @@ export default function ConstruccionTracker() {
           {movimientos.length === 0 ? (
             <div className="bg-white rounded-xl shadow-sm p-12 text-center">
               <p className="text-gray-500">No hay movimientos registrados todavía</p>
-              <p className="text-sm text-gray-400 mt-2">Agregá tu primer movimiento para comenzar</p>
+              <p className="text-sm text-gray-400 mt-2">
+                {configurado ? 'La sincronización con Google Sheets está activa' : 'Agregá tu primer movimiento para comenzar'}
+              </p>
             </div>
           ) : (
             movimientos.map(mov => (
@@ -388,9 +623,6 @@ export default function ConstruccionTracker() {
                       <span className="text-xs text-gray-500 capitalize">{mov.categoria}</span>
                     </div>
                     <h3 className="font-semibold text-slate-800">{mov.concepto}</h3>
-                    {mov.notas && (
-                      <p className="text-sm text-gray-600 mt-1">{mov.notas}</p>
-                    )}
                   </div>
                   <div className="text-right ml-4">
                     <p className="text-xl font-bold text-slate-800">
@@ -401,18 +633,21 @@ export default function ConstruccionTracker() {
                         ARS {mov.montoPesos.toLocaleString('es-AR')} @ {mov.tipoCambio}
                       </p>
                     )}
-                    <button
-                      onClick={() => eliminarMovimiento(mov.id)}
-                      className="text-xs text-red-600 hover:text-red-800 mt-2"
-                    >
-                      Eliminar
-                    </button>
                   </div>
                 </div>
               </div>
             ))
           )}
         </div>
+
+        {/* Botón de configuración flotante */}
+        <button
+          onClick={() => setMostrarConfig(true)}
+          className="fixed bottom-6 right-6 bg-gray-800 text-white p-4 rounded-full shadow-lg hover:bg-gray-700 transition-colors"
+          title="Configuración"
+        >
+          <Cloud size={24} />
+        </button>
       </div>
     </div>
   );
