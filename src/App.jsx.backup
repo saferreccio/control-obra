@@ -6,7 +6,6 @@ const GOOGLE_SHEETS_CONFIG = {
   apiKey: '',
   spreadsheetId: '',
   range: 'Libro Diario!A5:G',
-  scriptUrl: 'https://script.google.com/macros/s/AKfycbzw8bn9Gin1lhCnCi28aLNQD3qL6LBoSpfEl8Kg73zdSz8rUsY4NRCFnDfq-9EClE75fQ/exec'
 };
 
 export default function ConstruccionTracker() {
@@ -160,35 +159,36 @@ export default function ConstruccionTracker() {
       
       const proximoId = ultimoId + 1;
       
-      // Formatear fecha para Google Sheets (DD/MM/YYYY)
       const [year, month, day] = nuevoMovimiento.fecha.split('-');
       const fechaFormateada = `${day}/${month}/${year}`;
       
-      // Preparar datos para enviar al Apps Script
-      const datosParaEnviar = {
-        id: proximoId,
-        fecha: fechaFormateada,
-        concepto: nuevoMovimiento.concepto,
-        categoria: nuevoMovimiento.categoria,
-        montoUSD: nuevoMovimiento.moneda === 'USD' ? nuevoMovimiento.montoUSD : nuevoMovimiento.montoUSD,
-        montoPesos: nuevoMovimiento.moneda === 'ARS' ? nuevoMovimiento.montoPesos : '',
-        tipoCambio: nuevoMovimiento.tipoCambio || ''
-      };
+      const nuevaFila = [
+        proximoId,
+        fechaFormateada,
+        nuevoMovimiento.concepto,
+        nuevoMovimiento.categoria,
+        nuevoMovimiento.moneda === 'USD' ? nuevoMovimiento.montoUSD : `=F${proximoId + 4}/G${proximoId + 4}`,
+        nuevoMovimiento.moneda === 'ARS' ? nuevoMovimiento.montoPesos : `=E${proximoId + 4}*G${proximoId + 4}`,
+        nuevoMovimiento.tipoCambio || ''
+      ];
       
-      const response = await fetch(GOOGLE_SHEETS_CONFIG.scriptUrl, {
+      const url = `https://sheets.googleapis.com/v4/spreadsheets/${GOOGLE_SHEETS_CONFIG.spreadsheetId}/values/Libro Diario!A${proximoId + 4}:append?valueInputOption=USER_ENTERED&key=${GOOGLE_SHEETS_CONFIG.apiKey}`;
+      
+      const response = await fetch(url, {
         method: 'POST',
-        mode: 'no-cors', // Apps Script requiere no-cors
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(datosParaEnviar)
+        body: JSON.stringify({
+          values: [nuevaFila]
+        })
       });
       
-      // Con no-cors no podemos leer la respuesta, pero si llegó acá es que se envió
-      // Esperamos 1 segundo y recargamos
-      setTimeout(async () => {
-        await cargarDesdeGoogleSheets();
-      }, 1500);
+      if (!response.ok) {
+        throw new Error('Error al guardar en Google Sheets');
+      }
+      
+      await cargarDesdeGoogleSheets();
       
     } catch (err) {
       console.error('Error al guardar:', err);
