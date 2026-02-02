@@ -4,8 +4,8 @@ import * as XLSX from 'xlsx';
 
 // Configuración de Google Sheets
 const GOOGLE_SHEETS_CONFIG = {
-  apiKey: '', // El usuario deberá configurar esto
-  spreadsheetId: '', // El usuario deberá configurar esto
+  apiKey: 'AIzaSyDxw9tR8DnfS0uaoTsXbl_NvgfU_fVCRHA', // El usuario deberá configurar esto
+  spreadsheetId: '1jKz1HZAP9RbfRg3yOUYG972h9rQOJg93', // El usuario deberá configurar esto
   range: 'Libro Diario!A5:G', // Rango para leer/escribir datos
 };
 
