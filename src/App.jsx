@@ -99,9 +99,30 @@ export default function ConstruccionTracker() {
             const montoUSD = row[4] ? parseFloat(row[4]) : 0;
             const tipoCambio = row[6] ? parseFloat(row[6]) : null;
             
+            // Parsear fecha - puede venir en varios formatos
+            let fecha = '';
+            if (row[1]) {
+              // Si es formato DD/MM/YYYY
+              if (typeof row[1] === 'string' && row[1].includes('/')) {
+                const [day, month, year] = row[1].split('/');
+                fecha = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+              } 
+              // Si es formato ISO o Date object
+              else {
+                try {
+                  const d = new Date(row[1]);
+                  if (!isNaN(d.getTime())) {
+                    fecha = d.toISOString().split('T')[0];
+                  }
+                } catch (e) {
+                  fecha = new Date().toISOString().split('T')[0];
+                }
+              }
+            }
+            
             return {
               id: parseInt(row[0]) || Date.now(),
-              fecha: row[1] ? new Date(row[1]).toISOString().split('T')[0] : '',
+              fecha: fecha,
               concepto: row[2] || '',
               categoria: row[3] || 'Otros',
               montoUSD: montoUSD,
@@ -110,6 +131,7 @@ export default function ConstruccionTracker() {
               moneda: montoPesos > 0 ? 'ARS' : 'USD'
             };
           })
+          .filter(mov => mov.fecha) // Filtrar movimientos sin fecha válida
           .sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
         
         setMovimientos(movimientosCargados);
