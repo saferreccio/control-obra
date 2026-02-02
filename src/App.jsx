@@ -6,7 +6,7 @@ const GOOGLE_SHEETS_CONFIG = {
   apiKey: '',
   spreadsheetId: '',
   range: 'Libro Diario!A5:G',
-  scriptUrl: 'https://script.google.com/macros/s/AKfycbxBxFGQ9dxgwPKSSsexT8_2upZzyMF2trKkjmTflWskKazvtfug0mO9DUnOtZK32QZpXg/exec'
+  scriptUrl: 'https://script.google.com/macros/s/AKfycbwTC8NSRm4zTMPjf5fuiLY048Qe9ch3Q6puF5z0L_MO4Eob7YwyO6XEykeuohECV7cd8A/exec'
 };
 
 export default function ConstruccionTracker() {
@@ -17,6 +17,7 @@ export default function ConstruccionTracker() {
   const [sincronizando, setSincronizando] = useState(false);
   const [ultimaSync, setUltimaSync] = useState(null);
   const [error, setError] = useState(null);
+  const [guardando, setGuardando] = useState(false);
   const [totalCasa, setTotalCasa] = useState(parseFloat(localStorage.getItem('total-casa')) || 245000);
   const [editandoTotal, setEditandoTotal] = useState(false);
   const [nuevoTotal, setNuevoTotal] = useState(totalCasa);
@@ -104,17 +105,12 @@ export default function ConstruccionTracker() {
             let fecha = '';
             if (row[1]) {
               const fechaStr = row[1].toString();
-              // Si tiene formato "YYYY-MM-DD HH:MM:SS" o "YYYY-MM-DD"
               if (fechaStr.includes('-')) {
-                fecha = fechaStr.split(' ')[0]; // Tomar solo la parte de la fecha
-              }
-              // Si es formato DD/MM/YYYY
-              else if (fechaStr.includes('/')) {
+                fecha = fechaStr.split(' ')[0];
+              } else if (fechaStr.includes('/')) {
                 const [day, month, year] = fechaStr.split('/');
                 fecha = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
-              }
-              // Último intento con Date
-              else {
+              } else {
                 try {
                   const d = new Date(fechaStr);
                   if (!isNaN(d.getTime())) {
@@ -137,7 +133,7 @@ export default function ConstruccionTracker() {
               moneda: montoPesos > 0 ? 'ARS' : 'USD'
             };
           })
-          .filter(mov => mov.fecha && mov.montoUSD > 0) // Filtrar movimientos sin fecha válida o sin monto
+          .filter(mov => mov.fecha && mov.montoUSD > 0)
           .sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
         
         setMovimientos(movimientosCargados);
@@ -153,6 +149,9 @@ export default function ConstruccionTracker() {
   };
 
   const guardarEnGoogleSheets = async (nuevoMovimiento) => {
+    setGuardando(true);
+    setError(null);
+    
     try {
       const ultimoId = movimientos.length > 0 
         ? Math.max(...movimientos.map(m => m.id)) 
@@ -175,24 +174,47 @@ export default function ConstruccionTracker() {
         tipoCambio: nuevoMovimiento.tipoCambio || ''
       };
       
+      // =====================================================
+      // FIX: Usar POST con redirect:follow en lugar de no-cors
+      // Google Apps Script redirige (302) y el navegador lo sigue
+      // automáticamente, lo cual permite leer la respuesta.
+      // 
+      // El truco: NO enviar Content-Type: application/json
+      // porque eso dispara un preflight CORS que Apps Script
+      // no maneja. En su lugar, enviamos como text/plain
+      // que es un "simple request" y no necesita preflight.
+      // Apps Script igual puede leer el body con e.postData.contents.
+      // =====================================================
       const response = await fetch(GOOGLE_SHEETS_CONFIG.scriptUrl, {
         method: 'POST',
-        mode: 'no-cors', // Apps Script requiere no-cors
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        redirect: 'follow',
         body: JSON.stringify(datosParaEnviar)
       });
       
-      // Con no-cors no podemos leer la respuesta, pero si llegó acá es que se envió
-      // Esperamos 1 segundo y recargamos
+      // Intentar leer la respuesta
+      let resultado;
+      try {
+        resultado = await response.json();
+      } catch {
+        // Si no se puede parsear, asumimos que fue exitoso
+        // (a veces la respuesta viene como opaque redirect)
+        resultado = { success: true };
+      }
+      
+      if (resultado.success === false) {
+        throw new Error(resultado.error || 'Error desconocido al guardar');
+      }
+      
+      // Recargar datos desde Google Sheets
       setTimeout(async () => {
         await cargarDesdeGoogleSheets();
-      }, 1500);
+      }, 2000);
       
     } catch (err) {
       console.error('Error al guardar:', err);
-      alert('Error al guardar en Google Sheets. Verificá tu configuración.');
+      setError('Error al guardar: ' + err.message);
+    } finally {
+      setGuardando(false);
     }
   };
 
@@ -479,7 +501,8 @@ export default function ConstruccionTracker() {
         {!mostrarForm && (
           <button
             onClick={() => setMostrarForm(true)}
-            className="w-full bg-blue-600 text-white rounded-xl p-4 mb-6 flex items-center justify-center gap-2 hover:bg-blue-700 transition-colors shadow-sm"
+            disabled={guardando}
+            className="w-full bg-blue-600 text-white rounded-xl p-4 mb-6 flex items-center justify-center gap-2 hover:bg-blue-700 transition-colors shadow-sm disabled:bg-gray-400"
           >
             <Plus size={24} />
             <span className="font-semibold">Agregar Gasto</span>
@@ -609,12 +632,14 @@ export default function ConstruccionTracker() {
               <div className="flex gap-2 pt-2">
                 <button
                   onClick={agregarMovimiento}
-                  className="flex-1 bg-blue-600 text-white rounded-lg py-3 font-semibold hover:bg-blue-700 transition-colors"
+                  disabled={guardando}
+                  className="flex-1 bg-blue-600 text-white rounded-lg py-3 font-semibold hover:bg-blue-700 transition-colors disabled:bg-gray-400"
                 >
-                  Guardar
+                  {guardando ? 'Guardando...' : 'Guardar'}
                 </button>
                 <button
                   onClick={() => setMostrarForm(false)}
+                  disabled={guardando}
                   className="flex-1 bg-gray-200 text-gray-700 rounded-lg py-3 font-semibold hover:bg-gray-300 transition-colors"
                 >
                   Cancelar
