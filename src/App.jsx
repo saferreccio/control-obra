@@ -6,7 +6,7 @@ const GOOGLE_SHEETS_CONFIG = {
   apiKey: '',
   spreadsheetId: '',
   range: 'Libro Diario!A5:G',
-  scriptUrl: 'https://script.google.com/macros/s/AKfycbwTC8NSRm4zTMPjf5fuiLY048Qe9ch3Q6puF5z0L_MO4Eob7YwyO6XEykeuohECV7cd8A/exec'
+  scriptUrl: 'https://script.google.com/macros/s/AKfycbwAc2qm-m_UozoXJsaneF8sMUvk0Q5eiIBGnZMn4tdYo-_3Hg6xyCh28OL_DAYH1i4Rhg/exec'
 };
 
 export default function ConstruccionTracker() {
