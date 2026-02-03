@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Download, Plus, DollarSign, TrendingUp, RefreshCw, Cloud, AlertCircle, Edit2, Check, X } from 'lucide-react';
+import { Download, Plus, DollarSign, TrendingUp, RefreshCw, Cloud, AlertCircle, Edit2, Check, X, Trash2 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
 const GOOGLE_SHEETS_CONFIG = {
@@ -17,10 +17,10 @@ export default function ConstruccionTracker() {
   const [sincronizando, setSincronizando] = useState(false);
   const [ultimaSync, setUltimaSync] = useState(null);
   const [error, setError] = useState(null);
-  const [guardando, setGuardando] = useState(false);
   const [totalCasa, setTotalCasa] = useState(parseFloat(localStorage.getItem('total-casa')) || 245000);
   const [editandoTotal, setEditandoTotal] = useState(false);
   const [nuevoTotal, setNuevoTotal] = useState(totalCasa);
+  const [editandoMovimiento, setEditandoMovimiento] = useState(null);
   
   const [config, setConfig] = useState({
     apiKey: localStorage.getItem('sheets-api-key') || '',
@@ -95,22 +95,23 @@ export default function ConstruccionTracker() {
       
       if (data.values && data.values.length > 0) {
         const movimientosCargados = data.values
-          .filter(row => row[0] && row[4]) // Filtrar filas sin ID o sin monto USD
+          .filter(row => row[0] && row[4])
           .map(row => {
             const montoPesos = row[5] ? parseFloat(row[5].toString().replace(/,/g, '')) : 0;
             const montoUSD = row[4] ? parseFloat(row[4].toString().replace(/,/g, '')) : 0;
             const tipoCambio = row[6] ? parseFloat(row[6].toString().replace(/,/g, '')) : null;
             
-            // Parsear fecha - formato "2025-07-17 0:00:00"
             let fecha = '';
             if (row[1]) {
               const fechaStr = row[1].toString();
               if (fechaStr.includes('-')) {
                 fecha = fechaStr.split(' ')[0];
-              } else if (fechaStr.includes('/')) {
+              }
+              else if (fechaStr.includes('/')) {
                 const [day, month, year] = fechaStr.split('/');
                 fecha = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
-              } else {
+              }
+              else {
                 try {
                   const d = new Date(fechaStr);
                   if (!isNaN(d.getTime())) {
@@ -149,9 +150,6 @@ export default function ConstruccionTracker() {
   };
 
   const guardarEnGoogleSheets = async (nuevoMovimiento) => {
-    setGuardando(true);
-    setError(null);
-    
     try {
       const ultimoId = movimientos.length > 0 
         ? Math.max(...movimientos.map(m => m.id)) 
@@ -159,11 +157,9 @@ export default function ConstruccionTracker() {
       
       const proximoId = ultimoId + 1;
       
-      // Formatear fecha para Google Sheets (DD/MM/YYYY)
       const [year, month, day] = nuevoMovimiento.fecha.split('-');
       const fechaFormateada = `${day}/${month}/${year}`;
       
-      // Preparar datos para enviar al Apps Script
       const datosParaEnviar = {
         id: proximoId,
         fecha: fechaFormateada,
@@ -174,48 +170,135 @@ export default function ConstruccionTracker() {
         tipoCambio: nuevoMovimiento.tipoCambio || ''
       };
       
-      // =====================================================
-      // FIX: Usar POST con redirect:follow en lugar de no-cors
-      // Google Apps Script redirige (302) y el navegador lo sigue
-      // automáticamente, lo cual permite leer la respuesta.
-      // 
-      // El truco: NO enviar Content-Type: application/json
-      // porque eso dispara un preflight CORS que Apps Script
-      // no maneja. En su lugar, enviamos como text/plain
-      // que es un "simple request" y no necesita preflight.
-      // Apps Script igual puede leer el body con e.postData.contents.
-      // =====================================================
       const response = await fetch(GOOGLE_SHEETS_CONFIG.scriptUrl, {
         method: 'POST',
         redirect: 'follow',
+        headers: {
+          'Content-Type': 'application/json',
+        },
         body: JSON.stringify(datosParaEnviar)
       });
       
-      // Intentar leer la respuesta
-      let resultado;
-      try {
-        resultado = await response.json();
-      } catch {
-        // Si no se puede parsear, asumimos que fue exitoso
-        // (a veces la respuesta viene como opaque redirect)
-        resultado = { success: true };
-      }
+      const result = await response.text();
+      console.log('Respuesta del script:', result);
       
-      if (resultado.success === false) {
-        throw new Error(resultado.error || 'Error desconocido al guardar');
-      }
-      
-      // Recargar datos desde Google Sheets
       setTimeout(async () => {
         await cargarDesdeGoogleSheets();
       }, 2000);
       
     } catch (err) {
       console.error('Error al guardar:', err);
-      setError('Error al guardar: ' + err.message);
-    } finally {
-      setGuardando(false);
+      
+      setTimeout(async () => {
+        await cargarDesdeGoogleSheets();
+      }, 2000);
     }
+  };
+
+  const eliminarMovimiento = async (id) => {
+    if (!confirm('¿Seguro que querés eliminar este gasto?')) {
+      return;
+    }
+
+    try {
+      const response = await fetch(GOOGLE_SHEETS_CONFIG.scriptUrl, {
+        method: 'POST',
+        redirect: 'follow',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          action: 'delete',
+          id: id
+        })
+      });
+      
+      const result = await response.text();
+      console.log('Respuesta del script:', result);
+      
+      setTimeout(async () => {
+        await cargarDesdeGoogleSheets();
+      }, 2000);
+      
+    } catch (err) {
+      console.error('Error al eliminar:', err);
+      alert('Error al eliminar el gasto');
+    }
+  };
+
+  const editarMovimiento = (mov) => {
+    setEditandoMovimiento(mov.id);
+    setFormData({
+      fecha: mov.fecha,
+      concepto: mov.concepto,
+      categoria: mov.categoria,
+      montoPesos: mov.montoPesos || '',
+      montoUSD: mov.montoUSD,
+      tipoCambio: mov.tipoCambio || '',
+      moneda: mov.moneda
+    });
+  };
+
+  const guardarEdicion = async () => {
+    try {
+      const [year, month, day] = formData.fecha.split('-');
+      const fechaFormateada = `${day}/${month}/${year}`;
+      
+      const datosParaEnviar = {
+        action: 'edit',
+        id: editandoMovimiento,
+        fecha: fechaFormateada,
+        concepto: formData.concepto,
+        categoria: formData.categoria,
+        montoUSD: formData.moneda === 'USD' ? formData.montoUSD : formData.montoUSD,
+        montoPesos: formData.moneda === 'ARS' ? formData.montoPesos : '',
+        tipoCambio: formData.tipoCambio || ''
+      };
+      
+      const response = await fetch(GOOGLE_SHEETS_CONFIG.scriptUrl, {
+        method: 'POST',
+        redirect: 'follow',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(datosParaEnviar)
+      });
+      
+      const result = await response.text();
+      console.log('Respuesta del script:', result);
+      
+      setEditandoMovimiento(null);
+      setFormData({
+        fecha: new Date().toISOString().split('T')[0],
+        concepto: '',
+        categoria: 'Materiales',
+        montoPesos: '',
+        montoUSD: '',
+        tipoCambio: '',
+        moneda: 'USD'
+      });
+      
+      setTimeout(async () => {
+        await cargarDesdeGoogleSheets();
+      }, 2000);
+      
+    } catch (err) {
+      console.error('Error al editar:', err);
+      alert('Error al editar el gasto');
+    }
+  };
+
+  const cancelarEdicion = () => {
+    setEditandoMovimiento(null);
+    setFormData({
+      fecha: new Date().toISOString().split('T')[0],
+      concepto: '',
+      categoria: 'Materiales',
+      montoPesos: '',
+      montoUSD: '',
+      tipoCambio: '',
+      moneda: 'USD'
+    });
   };
 
   const handleInputChange = (e) => {
@@ -239,32 +322,37 @@ export default function ConstruccionTracker() {
       return;
     }
 
-    const nuevoMovimiento = {
-      id: Date.now(),
-      fecha: formData.fecha,
-      concepto: formData.concepto,
-      categoria: formData.categoria,
-      montoPesos: formData.moneda === 'ARS' ? parseFloat(formData.montoPesos) : 0,
-      montoUSD: formData.moneda === 'USD' ? parseFloat(formData.montoUSD) : parseFloat(formData.montoUSD) || 0,
-      tipoCambio: formData.moneda === 'ARS' ? parseFloat(formData.tipoCambio) : null,
-      moneda: formData.moneda
-    };
-
-    if (configurado) {
-      await guardarEnGoogleSheets(nuevoMovimiento);
+    if (editandoMovimiento) {
+      await guardarEdicion();
     } else {
-      setMovimientos([...movimientos, nuevoMovimiento].sort((a, b) => new Date(b.fecha) - new Date(a.fecha)));
+      const nuevoMovimiento = {
+        id: Date.now(),
+        fecha: formData.fecha,
+        concepto: formData.concepto,
+        categoria: formData.categoria,
+        montoPesos: formData.moneda === 'ARS' ? parseFloat(formData.montoPesos) : 0,
+        montoUSD: formData.moneda === 'USD' ? parseFloat(formData.montoUSD) : parseFloat(formData.montoUSD) || 0,
+        tipoCambio: formData.moneda === 'ARS' ? parseFloat(formData.tipoCambio) : null,
+        moneda: formData.moneda
+      };
+
+      if (configurado) {
+        await guardarEnGoogleSheets(nuevoMovimiento);
+      } else {
+        setMovimientos([...movimientos, nuevoMovimiento].sort((a, b) => new Date(b.fecha) - new Date(a.fecha)));
+      }
+      
+      setFormData({
+        fecha: new Date().toISOString().split('T')[0],
+        concepto: '',
+        categoria: 'Materiales',
+        montoPesos: '',
+        montoUSD: '',
+        tipoCambio: '',
+        moneda: 'USD'
+      });
     }
     
-    setFormData({
-      fecha: new Date().toISOString().split('T')[0],
-      concepto: '',
-      categoria: 'Materiales',
-      montoPesos: '',
-      montoUSD: '',
-      tipoCambio: '',
-      moneda: 'USD'
-    });
     setMostrarForm(false);
   };
 
@@ -498,11 +586,10 @@ export default function ConstruccionTracker() {
         </div>
 
         {/* Botón agregar */}
-        {!mostrarForm && (
+        {!mostrarForm && !editandoMovimiento && (
           <button
             onClick={() => setMostrarForm(true)}
-            disabled={guardando}
-            className="w-full bg-blue-600 text-white rounded-xl p-4 mb-6 flex items-center justify-center gap-2 hover:bg-blue-700 transition-colors shadow-sm disabled:bg-gray-400"
+            className="w-full bg-blue-600 text-white rounded-xl p-4 mb-6 flex items-center justify-center gap-2 hover:bg-blue-700 transition-colors shadow-sm"
           >
             <Plus size={24} />
             <span className="font-semibold">Agregar Gasto</span>
@@ -510,9 +597,9 @@ export default function ConstruccionTracker() {
         )}
 
         {/* Formulario */}
-        {mostrarForm && (
+        {(mostrarForm || editandoMovimiento) && (
           <div className="bg-white rounded-xl shadow-sm p-6 mb-6">
-            <h2 className="text-xl font-bold text-slate-800 mb-4">Nuevo Gasto</h2>
+            <h2 className="text-xl font-bold text-slate-800 mb-4">{editandoMovimiento ? 'Editar Gasto' : 'Nuevo Gasto'}</h2>
 
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
@@ -632,14 +719,18 @@ export default function ConstruccionTracker() {
               <div className="flex gap-2 pt-2">
                 <button
                   onClick={agregarMovimiento}
-                  disabled={guardando}
-                  className="flex-1 bg-blue-600 text-white rounded-lg py-3 font-semibold hover:bg-blue-700 transition-colors disabled:bg-gray-400"
+                  className="flex-1 bg-blue-600 text-white rounded-lg py-3 font-semibold hover:bg-blue-700 transition-colors"
                 >
-                  {guardando ? 'Guardando...' : 'Guardar'}
+                  {editandoMovimiento ? 'Guardar Cambios' : 'Guardar'}
                 </button>
                 <button
-                  onClick={() => setMostrarForm(false)}
-                  disabled={guardando}
+                  onClick={() => {
+                    if (editandoMovimiento) {
+                      cancelarEdicion();
+                    } else {
+                      setMostrarForm(false);
+                    }
+                  }}
                   className="flex-1 bg-gray-200 text-gray-700 rounded-lg py-3 font-semibold hover:bg-gray-300 transition-colors"
                 >
                   Cancelar
@@ -682,6 +773,22 @@ export default function ConstruccionTracker() {
                         ARS {mov.montoPesos.toLocaleString('es-AR')} @ {mov.tipoCambio}
                       </p>
                     )}
+                    <div className="flex gap-2 mt-2 justify-end">
+                      <button
+                        onClick={() => editarMovimiento(mov)}
+                        className="text-blue-600 hover:text-blue-800 text-sm flex items-center gap-1"
+                      >
+                        <Edit2 size={14} />
+                        Editar
+                      </button>
+                      <button
+                        onClick={() => eliminarMovimiento(mov.id)}
+                        className="text-red-600 hover:text-red-800 text-sm flex items-center gap-1"
+                      >
+                        <Trash2 size={14} />
+                        Eliminar
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
