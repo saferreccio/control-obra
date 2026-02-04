@@ -170,25 +170,22 @@ export default function ConstruccionTracker() {
         tipoCambio: nuevoMovimiento.tipoCambio || ''
       };
       
-      const response = await fetch(GOOGLE_SHEETS_CONFIG.scriptUrl, {
+      await fetch(GOOGLE_SHEETS_CONFIG.scriptUrl, {
         method: 'POST',
-        redirect: 'follow',
+        mode: 'no-cors',
         headers: {
-          'Content-Type': 'application/json',
+          'Content-Type': 'text/plain',
         },
         body: JSON.stringify(datosParaEnviar)
       });
-      
-      const result = await response.text();
-      console.log('Respuesta del script:', result);
-      
+
       setTimeout(async () => {
         await cargarDesdeGoogleSheets();
       }, 2000);
-      
+
     } catch (err) {
       console.error('Error al guardar:', err);
-      
+
       setTimeout(async () => {
         await cargarDesdeGoogleSheets();
       }, 2000);
@@ -201,20 +198,17 @@ export default function ConstruccionTracker() {
     }
 
     try {
-      const response = await fetch(GOOGLE_SHEETS_CONFIG.scriptUrl, {
+      await fetch(GOOGLE_SHEETS_CONFIG.scriptUrl, {
         method: 'POST',
-        redirect: 'follow',
+        mode: 'no-cors',
         headers: {
-          'Content-Type': 'application/json',
+          'Content-Type': 'text/plain',
         },
         body: JSON.stringify({
           action: 'delete',
           id: id
         })
       });
-      
-      const result = await response.text();
-      console.log('Respuesta del script:', result);
       
       setTimeout(async () => {
         await cargarDesdeGoogleSheets();
@@ -255,18 +249,15 @@ export default function ConstruccionTracker() {
         tipoCambio: formData.tipoCambio || ''
       };
       
-      const response = await fetch(GOOGLE_SHEETS_CONFIG.scriptUrl, {
+      await fetch(GOOGLE_SHEETS_CONFIG.scriptUrl, {
         method: 'POST',
-        redirect: 'follow',
+        mode: 'no-cors',
         headers: {
-          'Content-Type': 'application/json',
+          'Content-Type': 'text/plain',
         },
         body: JSON.stringify(datosParaEnviar)
       });
-      
-      const result = await response.text();
-      console.log('Respuesta del script:', result);
-      
+
       setEditandoMovimiento(null);
       setFormData({
         fecha: new Date().toISOString().split('T')[0],
