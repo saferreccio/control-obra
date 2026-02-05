@@ -35,14 +35,14 @@ export default function ConstruccionTracker() {
     'Mano de Obra': ['Gasista', 'Electricista', 'Colocación', 'Albañil'],
     'Obra gris': ['Estructura', 'Mamposteria', 'Carpetas', 'Durlok'],
     'Terminaciones': ['Revestimientos', 'Aberturas', 'Zocalos', 'Puertas', 'Sanitarios', 'Griferia', 'Armarios', 'Muebles Cocina'],
-    'Otros': ['Baño Quimico'],
+    'Otros': ['Baño Quimico', 'Otros'],
   };
 
   const [formData, setFormData] = useState({
     fecha: new Date().toISOString().split('T')[0],
     concepto: '',
-    categoria: 'Terreno',
-    subcategoria: '',
+    categoria: 'Otros',
+    subcategoria: 'Otros',
     montoPesos: '',
     montoUSD: '',
     tipoCambio: '',
