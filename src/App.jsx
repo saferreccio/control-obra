@@ -27,17 +27,27 @@ export default function ConstruccionTracker() {
     spreadsheetId: localStorage.getItem('sheets-spreadsheet-id') || ''
   });
 
+  const CATEGORIAS = {
+    'Terreno': ['Costo Terreno', 'Escritura'],
+    'Arquitecto': ['Proyecto', 'Direccion', 'Caja Chica'],
+    'Trámites': ['Estudio de suelo', 'Gestora y permisos', 'Gastos Presupuesto', 'Colegio Arquitectos', 'Derechos construccion', 'Calculo estructural', 'Canon de Obra', 'Fin de Obra'],
+    'Inicio de Obra': ['Cerco de Obra', 'Alta Electrica', 'Movimiento de suelo', 'Cartel de Obra', 'Tablero Provisorio'],
+    'Mano de Obra': ['Gasista', 'Electricista', 'Colocación', 'Albañil'],
+    'Obra gris': ['Estructura', 'Mamposteria', 'Carpetas', 'Durlok'],
+    'Terminaciones': ['Revestimientos', 'Aberturas', 'Zocalos', 'Puertas', 'Sanitarios', 'Griferia', 'Armarios', 'Muebles Cocina'],
+    'Otros': ['Baño Quimico'],
+  };
+
   const [formData, setFormData] = useState({
     fecha: new Date().toISOString().split('T')[0],
     concepto: '',
-    categoria: 'Materiales',
+    categoria: 'Terreno',
+    subcategoria: '',
     montoPesos: '',
     montoUSD: '',
     tipoCambio: '',
     moneda: 'USD'
   });
-
-  const categorias = ['Materiales', 'Mano de obra', 'Arquitectos', 'Tramite Municipalidad', 'Trabajos Preliminares', 'Honorarios', 'Permisos', 'Servicios', 'Otros'];
 
   useEffect(() => {
     const apiKey = localStorage.getItem('sheets-api-key');
@@ -222,10 +232,19 @@ export default function ConstruccionTracker() {
 
   const editarMovimiento = (mov) => {
     setEditandoMovimiento(mov.id);
+    let parentCat = 'Otros';
+    let subCat = mov.categoria;
+    for (const [key, subs] of Object.entries(CATEGORIAS)) {
+      if (subs.includes(mov.categoria)) {
+        parentCat = key;
+        break;
+      }
+    }
     setFormData({
       fecha: mov.fecha,
       concepto: mov.concepto,
-      categoria: mov.categoria,
+      categoria: parentCat,
+      subcategoria: subCat,
       montoPesos: mov.montoPesos || '',
       montoUSD: mov.montoUSD,
       tipoCambio: mov.tipoCambio || '',
@@ -243,7 +262,7 @@ export default function ConstruccionTracker() {
         id: editandoMovimiento,
         fecha: fechaFormateada,
         concepto: formData.concepto,
-        categoria: formData.categoria,
+        categoria: formData.subcategoria || formData.categoria,
         montoUSD: formData.moneda === 'USD' ? formData.montoUSD : formData.montoUSD,
         montoPesos: formData.moneda === 'ARS' ? formData.montoPesos : '',
         tipoCambio: formData.tipoCambio || ''
@@ -262,17 +281,18 @@ export default function ConstruccionTracker() {
       setFormData({
         fecha: new Date().toISOString().split('T')[0],
         concepto: '',
-        categoria: 'Materiales',
+        categoria: 'Terreno',
+        subcategoria: '',
         montoPesos: '',
         montoUSD: '',
         tipoCambio: '',
         moneda: 'USD'
       });
-      
+
       setTimeout(async () => {
         await cargarDesdeGoogleSheets();
       }, 2000);
-      
+
     } catch (err) {
       console.error('Error al editar:', err);
       alert('Error al editar el gasto');
@@ -284,7 +304,8 @@ export default function ConstruccionTracker() {
     setFormData({
       fecha: new Date().toISOString().split('T')[0],
       concepto: '',
-      categoria: 'Materiales',
+      categoria: 'Terreno',
+      subcategoria: '',
       montoPesos: '',
       montoUSD: '',
       tipoCambio: '',
@@ -295,6 +316,10 @@ export default function ConstruccionTracker() {
   const handleInputChange = (e) => {
     const { name, value } = e.target;
     let newFormData = { ...formData, [name]: value };
+
+    if (name === 'categoria') {
+      newFormData.subcategoria = CATEGORIAS[value]?.[0] || '';
+    }
 
     if (name === 'montoPesos' || name === 'tipoCambio') {
       const pesos = parseFloat(name === 'montoPesos' ? value : formData.montoPesos) || 0;
@@ -320,7 +345,7 @@ export default function ConstruccionTracker() {
         id: Date.now(),
         fecha: formData.fecha,
         concepto: formData.concepto,
-        categoria: formData.categoria,
+        categoria: formData.subcategoria || formData.categoria,
         montoPesos: formData.moneda === 'ARS' ? parseFloat(formData.montoPesos) : 0,
         montoUSD: formData.moneda === 'USD' ? parseFloat(formData.montoUSD) : parseFloat(formData.montoUSD) || 0,
         tipoCambio: formData.moneda === 'ARS' ? parseFloat(formData.tipoCambio) : null,
@@ -336,14 +361,15 @@ export default function ConstruccionTracker() {
       setFormData({
         fecha: new Date().toISOString().split('T')[0],
         concepto: '',
-        categoria: 'Materiales',
+        categoria: 'Terreno',
+        subcategoria: '',
         montoPesos: '',
         montoUSD: '',
         tipoCambio: '',
         moneda: 'USD'
       });
     }
-    
+
     setMostrarForm(false);
   };
 
@@ -440,15 +466,15 @@ export default function ConstruccionTracker() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-4">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-2 sm:p-4">
       <div className="max-w-4xl mx-auto">
         {/* Header */}
-        <div className="bg-white rounded-xl shadow-sm p-6 mb-6">
-          <div className="flex items-center justify-between mb-6">
+        <div className="bg-white rounded-xl shadow-sm p-4 sm:p-6 mb-4 sm:mb-6">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4 sm:mb-6">
             <div>
-              <h1 className="text-3xl font-bold text-slate-800">Control de Obra</h1>
+              <h1 className="text-2xl sm:text-3xl font-bold text-slate-800">Control de Obra</h1>
               <div className="flex items-center gap-2 mt-1">
-                <p className="text-slate-600">Construcción Alcanfores</p>
+                <p className="text-sm sm:text-base text-slate-600">Construcción Alcanfores</p>
                 {configurado && (
                   <span className="flex items-center gap-1 text-xs bg-green-100 text-green-700 px-2 py-1 rounded-full">
                     <Cloud size={12} />
@@ -462,18 +488,18 @@ export default function ConstruccionTracker() {
                 <button
                   onClick={cargarDesdeGoogleSheets}
                   disabled={sincronizando}
-                  className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300 transition-colors"
+                  className="flex items-center gap-1 sm:gap-2 px-3 sm:px-4 py-2 text-sm sm:text-base bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300 transition-colors"
                 >
-                  <RefreshCw size={20} className={sincronizando ? 'animate-spin' : ''} />
-                  {sincronizando ? 'Sincronizando...' : 'Actualizar'}
+                  <RefreshCw size={18} className={sincronizando ? 'animate-spin' : ''} />
+                  {sincronizando ? 'Sync...' : 'Actualizar'}
                 </button>
               )}
               <button
                 onClick={descargarExcel}
                 disabled={movimientos.length === 0}
-                className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+                className="flex items-center gap-1 sm:gap-2 px-3 sm:px-4 py-2 text-sm sm:text-base bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
               >
-                <Download size={20} />
+                <Download size={18} />
                 Excel
               </button>
             </div>
@@ -537,37 +563,37 @@ export default function ConstruccionTracker() {
           </div>
 
           {/* Métricas principales */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="bg-red-50 rounded-lg p-4">
-              <div className="flex items-center gap-2 text-red-700 mb-1">
-                <DollarSign size={18} />
-                <span className="text-sm font-medium">Total Gastado</span>
+          <div className="grid grid-cols-3 gap-2 sm:gap-4">
+            <div className="bg-red-50 rounded-lg p-2 sm:p-4">
+              <div className="flex items-center gap-1 text-red-700 mb-1">
+                <DollarSign size={14} className="hidden sm:block" />
+                <span className="text-xs sm:text-sm font-medium">Gastado</span>
               </div>
-              <p className="text-2xl font-bold text-red-900">
-                USD {totalGastado.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              <p className="text-sm sm:text-2xl font-bold text-red-900">
+                <span className="hidden sm:inline">USD </span>{totalGastado.toLocaleString('es-AR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
               </p>
             </div>
-            
-            <div className={`${faltaGastar >= 0 ? 'bg-blue-50' : 'bg-orange-50'} rounded-lg p-4`}>
-              <div className={`flex items-center gap-2 ${faltaGastar >= 0 ? 'text-blue-700' : 'text-orange-700'} mb-1`}>
-                <TrendingUp size={18} />
-                <span className="text-sm font-medium">Falta Gastar</span>
+
+            <div className={`${faltaGastar >= 0 ? 'bg-blue-50' : 'bg-orange-50'} rounded-lg p-2 sm:p-4`}>
+              <div className={`flex items-center gap-1 ${faltaGastar >= 0 ? 'text-blue-700' : 'text-orange-700'} mb-1`}>
+                <TrendingUp size={14} className="hidden sm:block" />
+                <span className="text-xs sm:text-sm font-medium">Falta</span>
               </div>
-              <p className={`text-2xl font-bold ${faltaGastar >= 0 ? 'text-blue-900' : 'text-orange-900'}`}>
-                USD {faltaGastar.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              <p className={`text-sm sm:text-2xl font-bold ${faltaGastar >= 0 ? 'text-blue-900' : 'text-orange-900'}`}>
+                <span className="hidden sm:inline">USD </span>{faltaGastar.toLocaleString('es-AR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
               </p>
             </div>
-            
-            <div className="bg-green-50 rounded-lg p-4">
-              <div className="flex items-center gap-2 text-green-700 mb-1">
-                <TrendingUp size={18} />
-                <span className="text-sm font-medium">% Avance</span>
+
+            <div className="bg-green-50 rounded-lg p-2 sm:p-4">
+              <div className="flex items-center gap-1 text-green-700 mb-1">
+                <TrendingUp size={14} className="hidden sm:block" />
+                <span className="text-xs sm:text-sm font-medium">Avance</span>
               </div>
-              <p className="text-2xl font-bold text-green-900">
+              <p className="text-sm sm:text-2xl font-bold text-green-900">
                 {porcentajeAvance.toFixed(1)}%
               </p>
-              <div className="mt-2 bg-green-200 rounded-full h-2 overflow-hidden">
-                <div 
+              <div className="mt-1 sm:mt-2 bg-green-200 rounded-full h-1.5 sm:h-2 overflow-hidden">
+                <div
                   className="bg-green-600 h-full transition-all duration-500"
                   style={{ width: `${Math.min(porcentajeAvance, 100)}%` }}
                 />
@@ -580,7 +606,7 @@ export default function ConstruccionTracker() {
         {!mostrarForm && !editandoMovimiento && (
           <button
             onClick={() => setMostrarForm(true)}
-            className="w-full bg-blue-600 text-white rounded-xl p-4 mb-6 flex items-center justify-center gap-2 hover:bg-blue-700 transition-colors shadow-sm"
+            className="w-full bg-blue-600 text-white rounded-xl p-3 sm:p-4 mb-4 sm:mb-6 flex items-center justify-center gap-2 hover:bg-blue-700 transition-colors shadow-sm"
           >
             <Plus size={24} />
             <span className="font-semibold">Agregar Gasto</span>
@@ -589,8 +615,8 @@ export default function ConstruccionTracker() {
 
         {/* Formulario */}
         {(mostrarForm || editandoMovimiento) && (
-          <div className="bg-white rounded-xl shadow-sm p-6 mb-6">
-            <h2 className="text-xl font-bold text-slate-800 mb-4">{editandoMovimiento ? 'Editar Gasto' : 'Nuevo Gasto'}</h2>
+          <div className="bg-white rounded-xl shadow-sm p-4 sm:p-6 mb-4 sm:mb-6">
+            <h2 className="text-lg sm:text-xl font-bold text-slate-800 mb-4">{editandoMovimiento ? 'Editar Gasto' : 'Nuevo Gasto'}</h2>
 
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
@@ -604,7 +630,7 @@ export default function ConstruccionTracker() {
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   />
                 </div>
-                
+
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Categoría</label>
                   <select
@@ -613,11 +639,25 @@ export default function ConstruccionTracker() {
                     onChange={handleInputChange}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   >
-                    {categorias.map(cat => (
+                    {Object.keys(CATEGORIAS).map(cat => (
                       <option key={cat} value={cat}>{cat}</option>
                     ))}
                   </select>
                 </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Subcategoría</label>
+                <select
+                  name="subcategoria"
+                  value={formData.subcategoria}
+                  onChange={handleInputChange}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
+                  {(CATEGORIAS[formData.categoria] || []).map(sub => (
+                    <option key={sub} value={sub}>{sub}</option>
+                  ))}
+                </select>
               </div>
 
               <div>
@@ -627,7 +667,7 @@ export default function ConstruccionTracker() {
                   name="concepto"
                   value={formData.concepto}
                   onChange={handleInputChange}
-                  placeholder="Ej: Hierro 8mm, Pago quincenal albañil, etc."
+                  placeholder="Otros"
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
               </div>
@@ -732,9 +772,9 @@ export default function ConstruccionTracker() {
         )}
 
         {/* Lista de movimientos */}
-        <div className="space-y-3">
+        <div className="space-y-2 sm:space-y-3">
           {movimientos.length === 0 ? (
-            <div className="bg-white rounded-xl shadow-sm p-12 text-center">
+            <div className="bg-white rounded-xl shadow-sm p-8 sm:p-12 text-center">
               <p className="text-gray-500">No hay gastos registrados todavía</p>
               <p className="text-sm text-gray-400 mt-2">
                 {configurado ? 'La sincronización con Google Sheets está activa' : 'Agregá tu primer gasto para comenzar'}
@@ -744,7 +784,7 @@ export default function ConstruccionTracker() {
             movimientos.map(mov => (
               <div
                 key={mov.id}
-                className="bg-white rounded-xl shadow-sm p-4 border-l-4 border-red-500"
+                className="bg-white rounded-xl shadow-sm p-3 sm:p-4 border-l-4 border-red-500"
               >
                 <div className="flex justify-between items-start">
                   <div className="flex-1">
@@ -756,7 +796,7 @@ export default function ConstruccionTracker() {
                     <h3 className="font-semibold text-slate-800">{mov.concepto}</h3>
                   </div>
                   <div className="text-right ml-4">
-                    <p className="text-xl font-bold text-slate-800">
+                    <p className="text-base sm:text-xl font-bold text-slate-800">
                       USD {mov.montoUSD.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </p>
                     {mov.montoPesos > 0 && (
